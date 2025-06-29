@@ -1,0 +1,77 @@
+import sys
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QLabel, QSpinBox, QPushButton,
+    QVBoxLayout, QMessageBox,
+)
+class FMSBirlesik(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("FMS Teşhis Aracı (Ölçüm + Anket)")
+        self.setGeometry(300, 300, 450, 500)
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("🧬 Belirtec Ölçüm Değerlerini Giriniz"))
+        self.miR145 = QSpinBox()
+        self.miR145.setRange(0, 40)
+        layout.addWidget(QLabel("miR-145-5p (max 40)-:"))
+        layout.addWidget(self.miR145)
+        self.miR223 = QSpinBox()
+        self.miR223.setRange(0, 30)
+        layout.addWidget(QLabel("miR-223-3p (max 30)-:"))
+        layout.addWidget(self.miR223)
+        self.bdnf = QSpinBox()
+        self.bdnf.setRange(0, 12)
+        layout.addWidget(QLabel("BDNF (max 12)+:"))
+        layout.addWidget(self.bdnf)
+        self.h2o2 = QSpinBox()
+        self.h2o2.setRange(0, 10)
+        layout.addWidget(QLabel("H2O2 (max 10)+:"))
+        layout.addWidget(self.h2o2)
+        self.coq10 = QSpinBox()
+        self.coq10.setRange(0, 8)
+        layout.addWidget(QLabel("CoQ10 (max 8)-:"))
+        layout.addWidget(self.coq10)
+        layout.addWidget(QLabel("\n📝 Soru-Cevap Tabanlı Puanlama"))
+        self.anket = QSpinBox()
+        self.anket.setRange(0, 100)
+        layout.addWidget(QLabel("Soru cevaplara dayalı toplam puan (0–100):"))
+        layout.addWidget(self.anket)
+        hesap_btn = QPushButton("FMS Skorunu Hesapla ve Tanıyı Belirle")
+        hesap_btn.clicked.connect(self.hesapla)
+        layout.addWidget(hesap_btn)
+        self.setLayout(layout)
+    def hesapla(self):
+        # Belirtec ölçüm değerleri
+        g_mir145 = self.miR145.value()
+        g_mir223 = self.miR223.value()
+        g_bdnf = self.bdnf.value()
+        g_h2o2 = self.h2o2.value()
+        g_coq10 = self.coq10.value()
+        toplam_belirtec = g_mir145 + g_mir223 + g_bdnf + g_h2o2 + g_coq10  # /100 zaten
+        belirtec_etki = toplam_belirtec * 0.85
+        # Soru-cevap puanı
+        soru_puani = self.anket.value()  # 0–100
+        soru_etki = soru_puani * 0.15
+        toplam_skor = round(belirtec_etki + soru_etki, 2)
+        sonuc = f"""
+📊 BİYOBELİRTEÇ ÖLÇÜM PUANLARI:
+- miR-145-5p: {g_mir145}/40
+- miR-223-3p: {g_mir223}/30
+- BDNF: {g_bdnf}/12
+- H2O2: {g_h2o2}/10
+- CoQ10: {g_coq10}/8
+Toplam Genetik: {toplam_belirtec}/100 → {round(belirtec_etki, 2)} puan (%85 katkı)
+📝 SORU-CEVAP PUANI:
+- Giriş: {soru_puani}/100 → {round(soru_etki, 2)} puan (%15 katkı)
+🎯 TOPLAM FMS SKORU: {toplam_skor} / 100
+"""
+        if toplam_skor >= 74:
+            sonuc += "\n✅ TANI: FMS POZİTİF"
+        else:
+            sonuc += "\n❌ TANI: FMS NEGATİF"
+
+        QMessageBox.information(self, "FMS SONUÇ", sonuc)
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    pencere = FMSBirlesik()
+    pencere.show()
+    sys.exit(app.exec_())
