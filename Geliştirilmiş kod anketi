@@ -302,3 +302,137 @@ if __name__ == "__main__":
     pencere = KatsayiHesaplayici()
     pencere.show()
     sys.exit(app.exec_())
+
+Geliştirilmiş ana test kodu: import sys
+import json
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QLabel, QSpinBox, QPushButton,
+    QVBoxLayout, QLineEdit, QComboBox, QMessageBox, QFileDialog
+)
+
+class FMSBirlesik(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("FMS Teşhis Aracı (Ölçüm + Anket + Hasta Bilgileri)")
+        self.setGeometry(300, 300, 500, 700)
+        layout = QVBoxLayout()
+
+        # Hasta Bilgileri
+        layout.addWidget(QLabel("👤 Hasta Bilgileri"))
+        self.ad = QLineEdit()
+        layout.addWidget(QLabel("Ad:"))
+        layout.addWidget(self.ad)
+        self.soyad = QLineEdit()
+        layout.addWidget(QLabel("Soyad:"))
+        layout.addWidget(self.soyad)
+        self.dogum_tarihi = QLineEdit()
+        layout.addWidget(QLabel("Doğum Tarihi (GG/AA/YYYY):"))
+        layout.addWidget(self.dogum_tarihi)
+        self.yas = QSpinBox()
+        self.yas.setRange(0, 120)
+        layout.addWidget(QLabel("Yaş:"))
+        layout.addWidget(self.yas)
+        self.medeni = QComboBox()
+        self.medeni.addItems(["Bekar", "Evli", "Diğer"])
+        layout.addWidget(QLabel("Medeni Durum:"))
+        layout.addWidget(self.medeni)
+
+        # Belirtec Ölçümleri
+        layout.addWidget(QLabel("\n🧬 Belirtec Ölçüm Değerlerini Giriniz"))
+        self.miR145 = QSpinBox()
+        self.miR145.setRange(0, 40)
+        layout.addWidget(QLabel("miR-145-5p (max 40)-:"))
+        layout.addWidget(self.miR145)
+        self.miR223 = QSpinBox()
+        self.miR223.setRange(0, 30)
+        layout.addWidget(QLabel("miR-223-3p (max 30)-:"))
+        layout.addWidget(self.miR223)
+        self.bdnf = QSpinBox()
+        self.bdnf.setRange(0, 12)
+        layout.addWidget(QLabel("BDNF (max 12)+:"))
+        layout.addWidget(self.bdnf)
+        self.h2o2 = QSpinBox()
+        self.h2o2.setRange(0, 10)
+        layout.addWidget(QLabel("H2O2 (max 10)+:"))
+        layout.addWidget(self.h2o2)
+        self.coq10 = QSpinBox()
+        self.coq10.setRange(0, 8)
+        layout.addWidget(QLabel("CoQ10 (max 8)-:"))
+        layout.addWidget(self.coq10)
+
+        # Anket
+        layout.addWidget(QLabel("\n📝 Soru-Cevap Tabanlı Puanlama"))
+        self.anket = QSpinBox()
+        self.anket.setRange(0, 100)
+        layout.addWidget(QLabel("Soru cevaplara dayalı toplam puan (0–100):"))
+        layout.addWidget(self.anket)
+
+        # Hesapla ve JSON kaydet
+        hesap_btn = QPushButton("FMS Skorunu Hesapla ve JSON Kaydet")
+        hesap_btn.clicked.connect(self.hesapla)
+        layout.addWidget(hesap_btn)
+
+        self.setLayout(layout)
+
+    def hesapla(self):
+        # Hasta bilgileri
+        hasta_bilgi = {
+            "ad": self.ad.text(),
+            "soyad": self.soyad.text(),
+            "dogum_tarihi": self.dogum_tarihi.text(),
+            "yas": self.yas.value(),
+            "medeni_durum": self.medeni.currentText()
+        }
+
+        # Belirtec ölçüm değerleri
+        g_mir145 = self.miR145.value()
+        g_mir223 = self.miR223.value()
+        g_bdnf = self.bdnf.value()
+        g_h2o2 = self.h2o2.value()
+        g_coq10 = self.coq10.value()
+        toplam_belirtec = g_mir145 + g_mir223 + g_bdnf + g_h2o2 + g_coq10
+        belirtec_etki = toplam_belirtec * 0.85
+
+        # Soru-cevap puanı
+        soru_puani = self.anket.value()
+        soru_etki = soru_puani * 0.15
+        toplam_skor = round(belirtec_etki + soru_etki, 2)
+
+        # Tanı
+        tanı = "FMS POZİTİF" if toplam_skor >= 74 else "FMS NEGATİF"
+
+        # JSON formatında veri
+        veri = {
+            "hasta_bilgileri": hasta_bilgi,
+            "belirtec_puanlari": {
+                "miR-145-5p": g_mir145,
+                "miR-223-3p": g_mir223,
+                "BDNF": g_bdnf,
+                "H2O2": g_h2o2,
+                "CoQ10": g_coq10,
+                "toplam": toplam_belirtec,
+                "katkisi": round(belirtec_etki, 2)
+            },
+            "anket_puani": {
+                "puan": soru_puani,
+                "katkisi": round(soru_etki, 2)
+            },
+            "toplam_fms_skoru": toplam_skor,
+            "tani": tanı
+        }
+
+        # JSON kaydetme
+        dosya_yolu, _ = QFileDialog.getSaveFileName(self, "JSON Kaydet", "", "JSON Files (*.json)")
+        if dosya_yolu:
+            with open(dosya_yolu, "w", encoding="utf-8") as f:
+                json.dump(veri, f, ensure_ascii=False, indent=4)
+
+        # Sonuç mesajı
+        sonuc = f"🎯 TOPLAM FMS SKORU: {toplam_skor} / 100\nTanı: {tanı}"
+        QMessageBox.information(self, "FMS Sonuç", sonuc)
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    pencere = FMSBirlesik()
+    pencere.show()
+    sys.exit(app.exec_())
