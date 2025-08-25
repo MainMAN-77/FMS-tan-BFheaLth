@@ -304,6 +304,7 @@ if __name__ == "__main__":
     sys.exit(app.exec_())
 
 Geliştirilmiş ana test kodu: import sys
+import sys
 import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QSpinBox, QPushButton,
@@ -399,7 +400,10 @@ class FMSBirlesik(QWidget):
         toplam_skor = round(belirtec_etki + soru_etki, 2)
 
         # Tanı
-        tanı = "FMS POZİTİF" if toplam_skor >= 74 else "FMS NEGATİF"
+        if toplam_skor >= 74:
+            tani = "✅ FMS POZİTİF"
+        else:
+            tani = "❌ FMS NEGATİF"
 
         # JSON formatında veri
         veri = {
@@ -418,7 +422,7 @@ class FMSBirlesik(QWidget):
                 "katkisi": round(soru_etki, 2)
             },
             "toplam_fms_skoru": toplam_skor,
-            "tani": tanı
+            "tani": tani
         }
 
         # JSON kaydetme
@@ -428,14 +432,15 @@ class FMSBirlesik(QWidget):
                 json.dump(veri, f, ensure_ascii=False, indent=4)
 
         # Sonuç mesajı
-        🎯 TOPLAM FMS SKORU: {toplam_skor} / 100
-        if toplam_skor >= 74:
-            sonuc += "\n✅ TANI: FMS POZİTİF"
-        else:
-            sonuc += "\n❌ TANI: FMS NEGATİF"
+        sonuc = f"🎯 TOPLAM FMS SKORU: {toplam_skor} / 100\n{tani}"
+        QMessageBox.information(self, "FMS Sonuç", sonuc)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    pencere = FMSBirlesik()
+    pencere.show()
+    sys.exit(app.exec_())
+
     pencere = FMSBirlesik()
     pencere.show()
     sys.exit(app.exec_())
