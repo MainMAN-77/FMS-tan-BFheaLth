@@ -428,8 +428,11 @@ class FMSBirlesik(QWidget):
                 json.dump(veri, f, ensure_ascii=False, indent=4)
 
         # Sonuç mesajı
-        sonuc = f"🎯 TOPLAM FMS SKORU: {toplam_skor} / 100\nTanı: {tanı}"
-        QMessageBox.information(self, "FMS Sonuç", sonuc)
+        🎯 TOPLAM FMS SKORU: {toplam_skor} / 100
+        if toplam_skor >= 74:
+            sonuc += "\n✅ TANI: FMS POZİTİF"
+        else:
+            sonuc += "\n❌ TANI: FMS NEGATİF"
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
