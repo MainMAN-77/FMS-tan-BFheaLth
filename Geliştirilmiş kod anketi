@@ -1,1 +1,304 @@
-a
+import sys
+import json
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QLabel, QSpinBox, QPushButton,
+    QVBoxLayout, QScrollArea, QMessageBox, QFileDialog, QInputDialog
+)
+
+class BelirtecPenceresi(QWidget):
+    def __init__(self, belirtec_adi, sorular, max_puan, callback):
+        super().__init__()
+        self.setWindowTitle(belirtec_adi)
+        self.setGeometry(200, 200, 600, 700)
+
+        self.belirtec_adi = belirtec_adi
+        self.sorular = sorular
+        self.max_puan = max_puan
+        self.callback = callback
+        self.spinboxes = []
+
+        self.initUI()
+
+    def initUI(self):
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(QLabel(f"{self.belirtec_adi} - Her soruya (-5) ve (5) arası puan giriniz."))
+
+        scroll_area = QScrollArea()
+        inner_widget = QWidget()
+        inner_layout = QVBoxLayout()
+
+        for soru in self.sorular:
+            inner_layout.addWidget(QLabel(soru))
+            spin = QSpinBox()
+            spin.setRange(-5, 5)
+            self.spinboxes.append((soru, spin))
+            inner_layout.addWidget(spin)
+
+        inner_widget.setLayout(inner_layout)
+        scroll_area.setWidget(inner_widget)
+        scroll_area.setWidgetResizable(True)
+        main_layout.addWidget(scroll_area)
+
+        btn = QPushButton("Kaydet ve Kapat")
+        btn.clicked.connect(self.devam_et)
+        main_layout.addWidget(btn)
+        self.setLayout(main_layout)
+
+    def devam_et(self):
+        puanlar = {soru: spin.value() for soru, spin in self.spinboxes}
+        puan_toplam = sum(puanlar.values())
+        max_soru_puan = len(self.spinboxes) * 5
+        oran = puan_toplam / max_soru_puan if max_soru_puan > 0 else 0
+        katkilar = round(oran * self.max_puan, 2)
+
+        # callback'e tüm sorular + puanlar + toplam gönderiyoruz
+        self.callback(self.belirtec_adi, katkilar, puanlar)
+        self.close()
+
+
+class KatsayiHesaplayici(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("FMS Tanı Skoru Hesaplayıcı")
+        self.setGeometry(200, 200, 500, 400)
+
+        self.max_puanlar = {
+            'K1_miR_145_5p(-)': 35,
+            'K2_miR_223_3p(-)': 25,
+            'K3_H2O2(+)': 15,
+            'K4_BDNF(+)': 15,
+            'K5_CoQ10(-)': 10
+        }
+
+        self.sorular = {
+    'K1_miR_145_5p(-)': [
+        "İşlenmiş gıda ve trans yağ tüketimi (etki: azaltır, puan: 9)",
+        "Bitki bazlı, anti-inflamatuvar beslenme (zeytinyağı, kurkumin, zencefil) (etki: artırır, puan: 8)",
+        "Radyasyona maruz kalma (MR, röntgen, güneş, ekran) (etki: azaltır, puan: 7)",
+        "Uzun süreli antibiyotik kullanımı geçmişi (etki: azaltır, puan: 7)",
+        "Doğal içerikli temizlik ve kozmetik ürün kullanımı (etki: artırır, puan: 6)",
+        "Hareketsiz yaşam (etki: azaltır, puan: 8)",
+        "Düzenli detoks (su, terleme, sauna) (etki: artırır, puan: 7)",
+        "Glukozinolat içeren sebze tüketimi (brokoli, lahana, turp) (etki: artırır, puan: 9)",
+        "Selenyum ve çinko takviyesi (etki: artırır, puan: 6)",
+        "Elektromanyetik alanlara yoğun maruz kalma (Bluetooth, Wi-Fi) (etki: azaltır, puan: 6)",
+        "Kimyasal içerikli kozmetik veya temizlik ürünleri kullanımı (etki: azaltır, puan: 7)",
+        "Sigara dumanına maruziyet (aktif/pasif) (etki: azaltır, puan: 9)",
+        "Yüksek düzeyde stres (etki: azaltır, puan: 9)",
+        "Kronik uyku bozukluğu / yetersizliği (etki: azaltır, puan: 8)",
+        "Aşırı protein alımı (etki: azaltır, puan: 6)",
+        "Aşırı tuz tüketimi (etki: azaltır, puan: 7)",
+        "Evcil hayvanla vakit geçirmek (etki: artırır, puan: 6)",
+        "Aşırı rekabet ortamında yaşamak (okul, sınav stresi, aile baskısı) (etki: azaltır, puan: 8)",
+        "Doğadan uzak şehir yaşamı (etki: azaltır, puan: 7)",
+        "Aşırı mükemmeliyetçi veya takıntılı davranışlar (etki: azaltır, puan: 7)",
+        "Probiyotik ve prebiyotik açısından zengin beslenme (etki: artırır, puan: 8)",
+        "Akdeniz diyeti uygulamak (etki: artırır, puan: 9)",
+        "Uzun süreli açlık / aralıklı oruç (etki: artırır, puan: 7)",
+        "D vitamini eksikliği (etki: azaltır, puan: 7)",
+        "Sirkadiyen ritim bozuklukları (vardiya, jetlag) (etki: azaltır, puan: 8)",
+        "Ekran ışığına bağlı melatonin baskılanması (etki: azaltır, puan: 6)",
+        "Yüksek şeker / glikoz tüketimi (etki: azaltır, puan: 8)"
+    ],
+    'K2_miR_223_3p(-)': [
+        "Aşırı yağlı ve işlenmiş gıdalar tüketimi (etki: artırır, puan: 9)",
+        "Omega-3 açısından zengin gıda tüketimi (balık, keten tohumu) (etki: azaltır, puan: 7)",
+        "Antioksidan açısından zengin beslenme (etki: azaltır, puan: 6)",
+        "Gece geç saatlerde mavi ışığa maruz kalma (etki: artırır, puan: 7)",
+        "Sürekli stres altında kalma (etki: artırır, puan: 9)",
+        "Düzenli uyku (etki: azaltır, puan: 7)",
+        "Düzenli egzersiz (etki: azaltır, puan: 8)",
+        "Hareketsiz masa başı yaşam (etki: artırır, puan: 8)",
+        "Temiz, yeşil alanlarda vakit geçirme (etki: azaltır, puan: 6)",
+        "Sürekli aç kalmak ve düşük kalorili diyetler (etki: azaltır, puan: 7)",
+        "Derin nefes alma alışkanlığı (etki: azaltır, puan: 5)",
+        "Tarım ilaçlarına maruz kalma (etki: artırır, puan: 8)",
+        "Aşırı sosyal medya kullanımı (etki: artırır, puan: 6)",
+        "Süt ve süt ürünleri tüketmeme (vegan diyet) (etki: azaltır, puan: 5)",
+        "Sık sık fast food tüketimi (etki: artırır, puan: 9)",
+        "Düzenli probiyotik takviyesi (etki: azaltır, puan: 6)",
+        "Haftada en az 2 kez işlenmiş et (sosis, salam vb.) tüketimi (etki: artırır, puan: 8)",
+        "Ağır metallere maruz kalmak (etki: artırır, puan: 9)",
+        "Düzenli kuruyemiş (ceviz, badem vs.) tüketimi (etki: azaltır, puan: 6)",
+        "Çok sık tatlı tüketimi (etki: artırır, puan: 7)"
+    ],
+    'K3_H2O2(+)': [
+        "Aşırı alkol tüketimi (etki: artırır, puan: 9)",
+        "Yüksek yağlı veya yüksek karbonhidratlı beslenme (etki: artırır, puan: 8)",
+        "Aktif ya da pasif sigaraya maruz kalmak (etki: artırır, puan: 10)",
+        "Yeterli ve dengeli beslenmek (etki: azaltır, puan: 9)",
+        "Yeterli ve düzenli uyku (etki: azaltır, puan: 9)",
+        "Güneş koruyucu kullanımı (etki: azaltır, puan: 7)",
+        "Antioksidan bakımından zengin besin tüketimi (etki: azaltır, puan: 9)",
+        "Günlük yaşamda sürekli strese maruz kalmak (etki: artırır, puan: 9)",
+        "Dengeli ve düzenli egzersiz (etki: azaltır, puan: 8)",
+        "Radyasyona maruz kalmak (etki: artırır, puan: 8)",
+        "Aşırı egzersiz (etki: artırır, puan: 7)",
+        "Genetik yatkınlık (etki: artırır, puan: 6)",
+        "Yoğun hava kirliliğine maruz kalma (etki: artırır, puan: 9)",
+        "Şekerli içecekler veya yüksek şeker tüketimi (etki: artırır, puan: 8)",
+        "Kimyasallara sık sık maruz kalma (etki: artırır, puan: 8)",
+        "Su tüketimi (etki: azaltır, puan: 7)",
+        "Sık sık iltihaplanma veya enfeksiyon yaşama (etki: artırır, puan: 8)",
+        "Vücut kitle indeksinin sağlıklı aralıkta olması (etki: azaltır, puan: 9)",
+        "Ekran süresi (etki: artırır, puan: 7)",
+        "Sık sık antibiyotik veya ilaç kullanımı (etki: artırır, puan: 7)",
+        "Düzenli meditasyon, dua ya da nefes egzersizleri (etki: azaltır, puan: 8)",
+        "Sosyal izolasyon ve toksik ilişkiler (etki: artırır, puan: 7)",
+        "Kafeinli içecek tüketimi (etki: artırır, puan: 6)",
+        "Obezite ve aşırı yağ dokusu varlığı (etki: artırır, puan: 9)",
+        "Kronik inflamatuar hastalıklar (romatoid artrit, IBS vb.) (etki: artırır, puan: 8)",
+        "Sigara dumanı maruziyeti (pasif dahi olsa) (etki: artırır, puan: 9)",
+        "Yetersiz antioksidan enzim aktivitesi (ör: SOD, katalaz düşüklüğü) (etki: artırır, puan: 8)",
+        "Yüksek doz vitamin C ve E takviyesi (bazı durumlarda pro-oksidan etkili) (etki: artırır, puan: 5)",
+        "Kronik uyku eksikliği (etki: artırır, puan: 8)",
+        "Çevresel toksinlere (kurşun, cıva, arsenik) maruz kalma (etki: artırır, puan: 9)"
+    ],
+    'K4_BDNF(+)': [
+        "Depresyon veya anksiyete gibi ruh hali bozuklukları (etki: azaltır, puan: 10)",
+        "Düzenli olarak açık havada yürüyüş (etki: artırır, puan: 9)",
+        "Ekran süresinin 5+ saat olması (etki: azaltır, puan: 8)",
+        "Meditasyon, nefes egzersizi gibi zihin sakinleştirici alışkanlıklar (etki: artırır, puan: 8)",
+        "Çikolata tüketimi (etki: artırır, puan: 6)",
+        "Yeşil çay veya zerdeçal tüketimi (etki: artırır, puan: 7)",
+        "Hareketsizlik (etki: azaltır, puan: 9)",
+        "Monoton işlerle meşgul olmak (etki: azaltır, puan: 7)",
+        "Nörolojik hastalık geçmişi (Alzheimer, depresyon, şizofreni) (etki: azaltır, puan: 10)",
+        "Aralıklı oruç uygulamak (etki: artırır, puan: 8)",
+        "Düzenli ve aşırı alkol tüketimi (etki: azaltır, puan: 9)",
+        "Yeni şeyler öğrenmeye çalışmak (etki: artırır, puan: 9)",
+        "Lif açısından zayıf beslenme (etki: azaltır, puan: 7)",
+        "Aşırı gürültülü, kaotik ortamda yaşamak (etki: azaltır, puan: 8)",
+        "Kapalı ortamda uzun süre kalmak (ışık görmemek) (etki: azaltır, puan: 8)",
+        "Sürekli acele içinde yaşamak (etki: azaltır, puan: 7)",
+        "Doğayla düzenli temas (toprak, yürüyüş, çiçek ekme) (etki: artırır, puan: 8)",
+        "Alüminyum veya plastik kapta sıcak yemek yemek (etki: azaltır, puan: 7)",
+        "Dengeli ve düzenli uyku (etki: artırır, puan: 9)",
+        "Yüksek oranda fruktoz ve şekerli gıda tüketimi (etki: azaltır, puan: 8)",
+        "Omega-3 tüketimi (DHA, EPA) (etki: artırır, puan: 9)",
+        "Zenginleştirilmiş çevrede bulunma (sanat, müzik, doğa) (etki: artırır, puan: 9)",
+        "Yüksek insülin seviyeleri (hiperinsülinemi) (etki: azaltır, puan: 7)",
+        "Yüksek D vitamini düzeyi (etki: artırır, puan: 8)",
+        "Kronik inflamasyon (yüksek CRP, IL-6 vs.) (etki: azaltır, puan: 8)",
+        "Kafeinli içeceklerin aşırı tüketimi (etki: azaltır, puan: 6)",
+        "Yüksek entelektüel uyarım (kitap, dil öğrenme, problem çözme) (etki: artırır, puan: 9)"
+    ],  
+    'K5_CoQ10(-)': [
+        "CoQ10 açısından zengin gıda tüketimi (etki: artırır, puan: 9)",
+        "CoQ10 takviyesi alımı (etki: artırır, puan: 10)",
+        "Dengeli ve düzenli beslenme (etki: artırır, puan: 8)",
+        "Çok yoğun ve uzun süreli egzersiz (etki: azaltır, puan: 7)",
+        "Enerjik olma düzeyi (etki: artırır, puan: 7)",
+        "Trans yağ ve işlenmiş gıda tüketimi (etki: azaltır, puan: 8)",
+        "Kolesterol düşürücü statin grubu ilaç kullanımı (etki: azaltır, puan: 10)",
+        "Fermente gıda tüketimi (yoğurt, kefir, turşu) (etki: artırır, puan: 7)",
+        "Kahvaltıyı atlamak (etki: azaltır, puan: 7)",
+        "Güneşten doğal D vitamini alımı (etki: artırır, puan: 8)",
+        "Mide problemi / reflü / emilim bozukluğu (etki: azaltır, puan: 8)",
+        "Vegan veya vejeteryan beslenme (etki: azaltır, puan: 7)",
+        "Doğum kontrol hapı, antidepresan veya kortizon kullanımı (etki: azaltır, puan: 7)",
+        "Bitkisel yağ (zeytinyağı, avokado yağı) tüketimi (etki: artırır, puan: 7)",
+        "Aşırı düşük kalorili diyet (etki: azaltır, puan: 8)",
+        "Omega-3 tüketimi (etki: artırır, puan: 8)",
+        "Sigara ya da alkol tüketimi (etki: azaltır, puan: 9)",
+        "Antioksidan içeren yiyecek tüketimi (yaban mersini, yeşil çay, kakao, ceviz) (etki: artırır, puan: 8)",
+        "Gıda boyası, katkı maddesi, yapay tatlandırıcı kullanımı (etki: azaltır, puan: 7)",
+        "Günlük parfüm, deodorant, vücut spreyi kullanımı (etki: azaltır, puan: 6)",
+        "Aynı anda birden fazla şey düşünmek (etki: azaltır, puan: 6)",
+        "Paraben, sülfat, ftalat içeren kozmetik ürün kullanımı (etki: azaltır, puan: 7)",
+        "Yaşlanma (etki: azaltır, puan: 9)",
+        "Mitokondriyal fonksiyon bozukluğu (etki: azaltır, puan: 8)",
+        "Kronik inflamasyon (etki: azaltır, puan: 7)",
+        "Aşırı stres ve kortizol yüksekliği (etki: azaltır, puan: 7)",
+        "Bazı antibiyotiklerin uzun süreli kullanımı (etki: azaltır, puan: 6)",
+        "Yetersiz uyku kalitesi (etki: azaltır, puan: 7)",
+        "Yüksek kafein tüketimi (etki: azaltır, puan: 5)"
+    ]
+}
+
+        # sonuçları saklamak için
+        self.katkilar = {}
+        self.detaylar = {}
+        self.acik_pencereler = {}
+
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Her belirteç için ilgili butona tıklayarak puanları giriniz:"))
+        layout.addWidget(QLabel("Kullanıcılar için uyarı1: Azaltıcı özelliğe sahip olanlar zaten bağımsız bir duruma işaret edebileceği için negatif değer verilerek girilmelidir!"))
+        layout.addWidget(QLabel("Kullanıcılar için uyarı2: Her soru belirteci eşit miktarda bir öneme sahip olmadığı için o soruya verilecek paun 5 üzerinden değil yanında yazan 10 üzerinden önem puanın yarısı olacak kadardır!"))
+        layout.addWidget(QLabel("Örnek olarak önem puanı 10 olan bir arttırıcı özellikteki bir puan için maksimum 5 dir ancak 6 olan biri için 3 maksimum puandır!"))
+        layout.addWidget(QLabel("Mir145-5p ve Mir223-3p üst düzey bir etkinlikte olduğundan eğer hastada yapılan spektrometrik test sonucuna göre o belirtece ait genetik soruların puanı önem farketmeksizin aynı eşit ve vücuttaki miktarına göre verilmelidir!"))
+        layout.addWidget(QLabel("Uyarı: Negatif kolerasyon gösterenlerin puanlaması pozitif korelasyon gösterenlerle göre tam tersi yani pozitif olan negatif, negatif olan pozitif olacak şekilde olacaktır!"))
+        layout.addWidget(QLabel("Belirtecin kolerasyonu belirteç butonları üzerinde + veya - ile, kendi sayfalarında yazı ile belirtilmiştir"))
+
+        for belirtec in self.sorular:
+            btn = QPushButton(belirtec)
+            btn.clicked.connect(lambda checked, b=belirtec: self.belirtec_penceresi_ac(b))
+            layout.addWidget(btn)
+
+        hesap_btn = QPushButton("FMS skorunu hesapla ve tanı koy.")
+        hesap_btn.clicked.connect(self.skoru_goster)
+        layout.addWidget(hesap_btn)
+
+        self.setLayout(layout)
+
+    def belirtec_penceresi_ac(self, belirtec):
+        pencere = BelirtecPenceresi(
+            belirtec_adi=belirtec,
+            sorular=self.sorular[belirtec],
+            max_puan=self.max_puanlar[belirtec],
+            callback=self.sonucu_kaydet
+        )
+        self.acik_pencereler[belirtec] = pencere
+        pencere.show()
+
+    def sonucu_kaydet(self, belirtec, deger, puanlar):
+        self.katkilar[belirtec] = deger
+        self.detaylar[belirtec] = {
+            "sorular": puanlar,
+            "katki": deger,
+            "max_puan": self.max_puanlar[belirtec]
+        }
+
+    def skoru_goster(self):
+        if len(self.katkilar) < len(self.max_puanlar):
+            QMessageBox.warning(self, "Eksik Girdi", "Lütfen tüm belirteçlerin puanlarını giriniz.")
+            return
+        hasta_notu, ok = QInputDialog.getText(self, "Hasta Açıklaması", "Lütfen hasta için ek açıklama giriniz:")
+        if not ok:
+            hasta_notu = ""
+
+        toplam = round(sum(self.katkilar.values()), 2)
+
+        # JSON verisi hazırla
+        data = {
+            "belirtecler": self.detaylar,
+            "toplam_skor": toplam,
+            "max_skor": 100
+        }
+        data = {
+    "hasta_notu": hasta_notu,
+    "belirtecler": self.detaylar,
+    "toplam_skor": toplam,
+    "max_skor": 100
+}
+
+
+        # Dosya kaydetme penceresi aç
+        dosya_adi, _ = QFileDialog.getSaveFileName(self, "JSON Dosyası Kaydet", "", "JSON Files (*.json)")
+        if dosya_adi:
+            with open(dosya_adi, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+
+        # ekranda göster
+        sonuc = "📊 Belirteç Katkıları:\n"
+        for k, v in self.katkilar.items():
+            sonuc += f"{k}: {v} / {self.max_puanlar[k]}\n"
+        sonuc += f"\n🎯 Toplam FMS Skoru: {toplam} / 100\n"
+        QMessageBox.information(self, "FMS Sonuç", sonuc)
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    pencere = KatsayiHesaplayici()
+    pencere.show()
+    sys.exit(app.exec_())
