@@ -303,7 +303,8 @@ if __name__ == "__main__":
     pencere.show()
     sys.exit(app.exec_())
 
-Geliştirilmiş ana test kodu: import sys
+Geliştirilmiş ana test kodu:
+import sys
 import sys
 import json
 from PyQt5.QtWidgets import (
