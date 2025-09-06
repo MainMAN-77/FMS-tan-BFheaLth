@@ -1,0 +1,308 @@
+# ================= FMS ANKET — ANA PUANLAMA MOTORU (importsuz, tek dosya) =================
+# Bu dosya yalnızca matematik hesaplar; GUI veya haricî modül yoktur.
+# Botunuz hasta verisini işler → her soru için raw ∈ [-10, +10] tek sayı üretir → score(patient) çağrılır.
+
+# --------------------------------------------------------------------
+# Yardımcılar
+# --------------------------------------------------------------------
+def _clamp(x, lo, hi):
+    if x < lo: return lo
+    if x > hi: return hi
+    return x
+
+def _to_float_or_none(v):
+    # Bot ham sayısal değer vereceği için genelde float/int gelir; yine de emniyet için dönüştürme deneriz.
+    if v is None: 
+        return None
+    try:
+        return float(v)
+    except:
+        return None
+
+def _apply_info_rule(effect, corr):
+    """
+    Info1–Info4 sign kuralı:
+      Pozitif etki koşulu: (effect == "azaltır" ve corr == -1) veya (effect == "artırır" ve corr == +1)
+      Aksi hâlde negatif etki.
+    Döndürür: +1 veya -1
+    """
+    e = (effect or "").strip().lower()
+    c = -1 if corr < 0 else 1
+    if (e == "azaltır" and c == -1) or (e == "artırır" and c == 1):
+        return 1.0
+    return -1.0
+
+def _scale_with_effect(directed10, E):
+    # [-10,+10] → [-1,+1] → * (E/2)  =  [-E/2, +E/2]
+    return (directed10 / 10.0) * (E / 2.0)
+
+# --------------------------------------------------------------------
+# Soru bankası (K1..K5) — her marker: correlation, max_points, questions(list)
+# Her soru: key, text, effect ("artırır" | "azaltır"), E (etki puanı)
+# NOT: K1, K2, K5 korelasyon NEGATİF (-1) ; K3, K4 pozitif (+1)
+# --------------------------------------------------------------------
+QUESTIONS = {
+    "K1": {
+        "marker_name": "miR-145-5p",
+        "correlation": -1,
+        "max_points": 35,
+        "questions": [
+            {"key":"Q1","text":"İşlenmiş gıda ve trans yağ tüketimi → Haftada kaç gün işlenmiş gıda veya trans yağ içeren yiyecek tüketiyorsunuz? (0–7 gün)","effect":"azaltır","E":9},
+            {"key":"Q2","text":"Bitki bazlı, anti-inflamatuvar beslenme → Haftada kaç gün bitki bazlı, anti-inflamatuvar yiyecek tüketiyorsunuz? (0–7 gün)","effect":"artırır","E":8},
+            {"key":"Q3","text":"Radyasyona maruz kalma → Günlük ortalama radyasyona/ekran ışığına maruz kalma süreniz kaç saattir? (saat)","effect":"azaltır","E":7},
+            {"key":"Q4","text":"Uzun süreli antibiyotik kullanımı geçmişi → Son 12 ayda toplam antibiyotik kullanımı süreniz kaç gündür? (gün)","effect":"azaltır","E":7},
+            {"key":"Q5","text":"Doğal içerikli temizlik ve kozmetik ürün kullanımı → Günlük kullanılan temizlik/kozmetik ürünlerinin yüzde kaçı doğal içerikli? (0–100%)","effect":"artırır","E":6},
+            {"key":"Q6","text":"Hareketsiz yaşam → Günlük ortalama hareketsiz (oturarak geçen) süreniz kaç saattir? (saat)","effect":"azaltır","E":8},
+            {"key":"Q7","text":"Düzenli detoks (su, terleme, sauna) → Haftada kaç gün detoks amaçlı terleme, sauna veya yüksek sıvı alımı yapıyorsunuz? (0–7 gün)","effect":"artırır","E":7},
+            {"key":"Q8","text":"Glukozinolat içeren sebze tüketimi → Haftada kaç porsiyon glukozinolat içeren sebze tüketiyorsunuz? (porsiyon)","effect":"artırır","E":9},
+            {"key":"Q9","text":"Selenyum ve çinko takviyesi → Haftada kaç gün selenyum veya çinko takviyesi kullanıyorsunuz? (0–7 gün)","effect":"artırır","E":6},
+            {"key":"Q10","text":"Elektromanyetik alanlara yoğun maruz kalma → Günlük kaç saat aktif Bluetooth/Wi-Fi sinyaline maruz kalıyorsunuz? (saat)","effect":"azaltır","E":6},
+            {"key":"Q11","text":"Kimyasal içerikli kozmetik veya temizlik ürünleri kullanımı → Günlük kullanılan ürünlerin yüzde kaçı kimyasal içeriklidir? (0–100%)","effect":"azaltır","E":7},
+            {"key":"Q12","text":"Sigara dumanına maruziyet (aktif/pasif) → Günlük ortalama sigara dumanına maruz kalma süresi kaç saattir? (saat)","effect":"azaltır","E":9},
+            {"key":"Q13","text":"Yüksek düzeyde stres → Günlük stres düzeyinizi 0–10 arasında değerlendirir misiniz? (0=hiç, 10=çok yüksek)","effect":"azaltır","E":9},
+            {"key":"Q14","text":"Kronik uyku bozukluğu / yetersizliği → Gecelik ortalama uyku süreniz kaç saattir? (saat)","effect":"azaltır","E":8},
+            {"key":"Q15","text":"Aşırı protein alımı → Günlük toplam protein alımınız kaç gramdır? (gram)","effect":"azaltır","E":6},
+            {"key":"Q16","text":"Aşırı tuz tüketimi → Günlük toplam tuz tüketiminiz kaç gramdır? (gram)","effect":"azaltır","E":7},
+            {"key":"Q17","text":"Evcil hayvanla vakit geçirmek → Günlük ortalama evcil hayvanla geçirilen süreniz kaç saattir? (saat)","effect":"artırır","E":6},
+            {"key":"Q18","text":"Aşırı rekabet ortamında yaşamak → Günlük rekabet/stres baskısını 0–10 arasında değerlendirir misiniz? (0=hiç, 10=aşırı)","effect":"azaltır","E":8},
+            {"key":"Q19","text":"Doğadan uzak şehir yaşamı → Haftada kaç gün doğayla (park, orman, bahçe) temasınız oluyor? (0–7 gün)","effect":"azaltır","E":7},
+            {"key":"Q20","text":"Aşırı mükemmeliyetçi veya takıntılı davranışlar → Kendinizi mükemmeliyetçilik düzeyinde 0–10 arasında değerlendirir misiniz? (0=hiç, 10=aşırı)","effect":"azaltır","E":7},
+            {"key":"Q21","text":"Probiyotik ve prebiyotik açısından zengin beslenme → Haftada kaç porsiyon probiyotik/prebiyotik besin tüketiyorsunuz? (porsiyon)","effect":"artırır","E":8},
+            {"key":"Q22","text":"Akdeniz diyeti uygulamak → Beslenme tarzınızın yüzde kaçı Akdeniz diyeti ilkelerine uygundur? (0–100%)","effect":"artırır","E":9},
+            {"key":"Q23","text":"Uzun süreli açlık / aralıklı oruç → Haftada kaç gün 12 saatten uzun açlık/aralıklı oruç uyguluyorsunuz? (0–7 gün)","effect":"artırır","E":7},
+            {"key":"Q24","text":"D vitamini eksikliği → Son 1 yıl içindeki kan testlerinizde D vitamini (25-OH) düzeyi ortalama kaç ng/mL çıktı? (sayısal)","effect":"azaltır","E":7},
+            {"key":"Q25","text":"Sirkadiyen ritim bozuklukları (vardiya, jetlag) → Ayda kaç gün sirkadiyen ritminizi bozan durumlar yaşıyorsunuz? (gün)","effect":"azaltır","E":8},
+            {"key":"Q26","text":"Ekran ışığına bağlı melatonin baskılanması → Uyumadan önce ekran karşısında geçirilen süre ortalama kaç dakikadır? (dakika)","effect":"azaltır","E":6},
+            {"key":"Q27","text":"Yüksek şeker / glikoz tüketimi → Günlük ortalama şeker veya glikoz tüketiminiz kaç gramdır? (gram)","effect":"azaltır","E":8},
+        ]
+    },
+    "K2": {
+        "marker_name": "miR-223-3p",
+        "correlation": -1,
+        "max_points": 25,
+        "questions": [
+            {"key":"Q1","text":"Aşırı yağlı ve işlenmiş gıdalar tüketimi → Haftada kaç gün aşırı yağlı veya işlenmiş gıda tüketiyorsunuz? (0–7 gün)","effect":"artırır","E":9},
+            {"key":"Q2","text":"Omega-3 açısından zengin gıda tüketimi → Haftada kaç gün omega-3 açısından zengin gıda tüketiyorsunuz? (0–7 gün)","effect":"azaltır","E":7},
+            {"key":"Q3","text":"Antioksidan açısından zengin beslenme → Günlük ortalama antioksidan açısından zengin besin porsiyonunuz kaçtır? (porsiyon)","effect":"azaltır","E":6},
+            {"key":"Q4","text":"Gece geç saatlerde mavi ışığa maruz kalma → Uyumadan önce ekran karşısında geçirdiğiniz ortalama süre kaç dakikadır? (dakika)","effect":"artırır","E":7},
+            {"key":"Q5","text":"Sürekli stres altında kalma → Günlük stres düzeyinizi 0–10 arasında değerlendirir misiniz? (0=hiç, 10=çok yüksek)","effect":"artırır","E":9},
+            {"key":"Q6","text":"Düzenli uyku → Gecelik ortalama uyku süreniz kaç saattir? (saat)","effect":"azaltır","E":7},
+            {"key":"Q7","text":"Düzenli egzersiz → Haftada kaç gün düzenli egzersiz yapıyorsunuz? (0–7 gün)","effect":"azaltır","E":8},
+            {"key":"Q8","text":"Hareketsiz masa başı yaşam → Günlük ortalama hareketsiz (masa başında geçen) süreniz kaç saattir? (saat)","effect":"artırır","E":8},
+            {"key":"Q9","text":"Temiz, yeşil alanlarda vakit geçirme → Haftada kaç gün temiz, yeşil alanlarda (park, bahçe, orman) vakit geçiriyorsunuz? (0–7 gün)","effect":"azaltır","E":6},
+            {"key":"Q10","text":"Sürekli aç kalmak ve düşük kalorili diyetler → Haftada kaç gün düşük kalorili diyet veya uzun süreli açlık uyguluyorsunuz? (0–7 gün)","effect":"azaltır","E":7},
+            {"key":"Q11","text":"Derin nefes alma alışkanlığı → Günlük ortalama derin nefes egzersizi süreniz kaç dakikadır? (dakika)","effect":"azaltır","E":5},
+            {"key":"Q12","text":"Tarım ilaçlarına maruz kalma → Haftada kaç gün tarım ilaçlarına doğrudan maruz kalıyorsunuz? (0–7 gün)","effect":"artırır","E":8},
+            {"key":"Q13","text":"Aşırı sosyal medya kullanımı → Günlük ortalama sosyal medya kullanım süreniz kaç saattir? (saat)","effect":"artırır","E":6},
+            {"key":"Q14","text":"Süt ve süt ürünleri tüketmeme (vegan diyet) → Haftada kaç gün süt ve süt ürünleri tüketiyorsunuz? (0–7 gün)","effect":"azaltır","E":5},
+            {"key":"Q15","text":"Sık sık fast food tüketimi → Haftada kaç gün fast food tüketiyorsunuz? (0–7 gün)","effect":"artırır","E":9},
+            {"key":"Q16","text":"Düzenli probiyotik takviyesi → Haftada kaç gün probiyotik takviyesi alıyorsunuz? (0–7 gün)","effect":"azaltır","E":6},
+            {"key":"Q17","text":"Haftada en az 2 kez işlenmiş et tüketimi → Haftada kaç gün işlenmiş et (sosis, salam vb.) tüketiyorsunuz? (0–7 gün)","effect":"artırır","E":8},
+            {"key":"Q18","text":"Ağır metallere maruz kalmak → Son 1 yıl içinde ağır metallere maruz kalma sıklığınız nedir? (0=hiç, 10=çok sık)","effect":"artırır","E":9},
+            {"key":"Q19","text":"Düzenli kuruyemiş tüketimi → Haftada kaç porsiyon kuruyemiş tüketiyorsunuz? (porsiyon)","effect":"azaltır","E":6},
+            {"key":"Q20","text":"Çok sık tatlı tüketimi → Haftada kaç gün tatlı tüketiyorsunuz? (0–7 gün)","effect":"artırır","E":7},
+        ]
+    },
+    "K3": {
+        "marker_name": "H2O2",
+        "correlation": +1,
+        "max_points": 15,
+        "questions": [
+            {"key":"Q1","text":"Aşırı alkol tüketimi → Haftada kaç gün alkol kullanıyorsunuz? (0–7 gün)","effect":"artırır","E":9},
+            {"key":"Q2","text":"Yüksek yağlı veya yüksek karbonhidratlı beslenme → Günlük toplam yağ + karbonhidrat tüketiminiz ne kadar? (gram)","effect":"artırır","E":8},
+            {"key":"Q3","text":"Aktif ya da pasif sigaraya maruz kalmak → Günlük ortalama sigara dumanına maruz kalma süreniz kaç saattir? (saat)","effect":"artırır","E":10},
+            {"key":"Q4","text":"Yeterli ve dengeli beslenmek → Beslenme düzeninizin yüzde kaçı dengeli ve yeterli öğünlerden oluşuyor? (0–100%)","effect":"azaltır","E":9},
+            {"key":"Q5","text":"Yeterli ve düzenli uyku → Gecelik ortalama uyku süreniz kaç saattir? (saat)","effect":"azaltır","E":9},
+            {"key":"Q6","text":"Güneş koruyucu kullanımı → Haftada kaç gün düzenli olarak güneş koruyucu kullanıyorsunuz? (0–7 gün)","effect":"azaltır","E":7},
+            {"key":"Q7","text":"Antioksidan bakımından zengin besin tüketimi → Haftada kaç porsiyon antioksidan açısından zengin besin tüketiyorsunuz? (porsiyon)","effect":"azaltır","E":9},
+            {"key":"Q8","text":"Günlük yaşamda sürekli strese maruz kalmak → Günlük stres düzeyiniz (0–10)","effect":"artırır","E":9},
+            {"key":"Q9","text":"Dengeli ve düzenli egzersiz → Haftada kaç gün düzenli egzersiz yapıyorsunuz? (0–7 gün)","effect":"azaltır","E":8},
+            {"key":"Q10","text":"Radyasyona maruz kalmak → Son 12 ayda toplam radyolojik inceleme sayınız kaçtır? (adet)","effect":"artırır","E":8},
+            {"key":"Q11","text":"Aşırı egzersiz → Haftada kaç gün aşırı yoğun egzersiz yapıyorsunuz? (0–7 gün)","effect":"artırır","E":7},
+            {"key":"Q12","text":"Genetik yatkınlık → Ailenizde oksidatif stresle ilişkili hastalık öyküsü (0=hiç, 10=çok güçlü)","effect":"artırır","E":6},
+            {"key":"Q13","text":"Yoğun hava kirliliğine maruz kalma → Günlük dış ortam hava kirliliğine maruz kalma süreniz kaç saattir? (saat)","effect":"artırır","E":9},
+            {"key":"Q14","text":"Şekerli içecekler veya yüksek şeker tüketimi → Günlük ortalama şeker/şekerli içecek tüketiminiz kaç gramdır? (gram)","effect":"artırır","E":8},
+            {"key":"Q15","text":"Kimyasallara sık sık maruz kalma → Haftada kaç gün kimyasallara doğrudan maruz kalıyorsunuz? (0–7 gün)","effect":"artırır","E":8},
+            {"key":"Q16","text":"Su tüketimi → Günlük toplam su tüketiminiz kaç litredir? (litre)","effect":"azaltır","E":7},
+            {"key":"Q17","text":"Sık sık iltihaplanma veya enfeksiyon yaşama → Son 12 ayda kaç kez enfeksiyon geçirdiniz? (adet)","effect":"artırır","E":8},
+            {"key":"Q18","text":"Vücut kitle indeksinin sağlıklı aralıkta olması → BMI’niz (sayısal)","effect":"azaltır","E":9},
+            {"key":"Q19","text":"Ekran süresi → Günlük ekran başında geçirilen toplam süre kaç saattir? (saat)","effect":"artırır","E":7},
+            {"key":"Q20","text":"Sık sık antibiyotik veya ilaç kullanımı → Son 12 ayda kaç farklı antibiyotik veya sürekli ilaç kullandınız? (adet)","effect":"artırır","E":7},
+            {"key":"Q21","text":"Düzenli meditasyon, dua ya da nefes egzersizleri → Haftada kaç gün bu pratikleri yapıyorsunuz? (0–7 gün)","effect":"azaltır","E":8},
+            {"key":"Q22","text":"Sosyal izolasyon ve toksik ilişkiler → Son 1 ayda izole hissettiğiniz gün sayısı kaçtır? (gün)","effect":"artırır","E":7},
+            {"key":"Q23","text":"Kafeinli içecek tüketimi → Günlük toplam kafeinli içecek tüketiminiz kaç fincan/kupa? (adet)","effect":"artırır","E":6},
+            {"key":"Q24","text":"Obezite ve aşırı yağ dokusu varlığı → Vücut yağ oranınız yüzde kaçtır? (0–100%)","effect":"artırır","E":9},
+            {"key":"Q25","text":"Kronik inflamatuar hastalıklar → Size tanı konmuş kronik inflamatuar hastalık sayısı (0=hiç, 1+=var)","effect":"artırır","E":8},
+            {"key":"Q26","text":"Sigara dumanı maruziyeti (pasif dahi olsa) → Günlük pasif maruziyet süresi kaç saattir? (saat)","effect":"artırır","E":9},
+            {"key":"Q27","text":"Yetersiz antioksidan enzim aktivitesi (SOD/katalaz düşük) → 0=çok düşük, 10=normal","effect":"artırır","E":8},
+            {"key":"Q28","text":"Yüksek doz vitamin C ve E takviyesi → Günlük C/E dozu kaç mg? (mg)","effect":"artırır","E":5},
+            {"key":"Q29","text":"Kronik uyku eksikliği → Son 1 ayda günde ortalama kaç saat uyudunuz? (saat)","effect":"artırır","E":8},
+            {"key":"Q30","text":"Çevresel toksinlere (kurşun, cıva, arsenik) maruz kalma → 0=hiç, 10=çok yüksek","effect":"artırır","E":9},
+        ]
+    },
+    "K4": {
+        "marker_name": "BDNF",
+        "correlation": +1,
+        "max_points": 15,
+        "questions": [
+            {"key":"Q1","text":"Depresyon/anksiyete → Son 1 yılda semptom sıklığı (0=hiç, 10=çok sık)","effect":"azaltır","E":10},
+            {"key":"Q2","text":"Açık havada yürüyüş → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":9},
+            {"key":"Q3","text":"Ekran süresi 5+ saat → Günlük kaç saat? (saat)","effect":"azaltır","E":8},
+            {"key":"Q4","text":"Meditasyon/nefes egzersizi → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":8},
+            {"key":"Q5","text":"Çikolata tüketimi → Haftada kaç porsiyon? (porsiyon)","effect":"artırır","E":6},
+            {"key":"Q6","text":"Yeşil çay/zerdeçal → Haftada kaç porsiyon? (porsiyon)","effect":"artırır","E":7},
+            {"key":"Q7","text":"Hareketsizlik → Günlük oturarak geçen saat (saat)","effect":"azaltır","E":9},
+            {"key":"Q8","text":"Monoton işlerle meşgul olma → Günün yüzde kaçı? (0–100%)","effect":"azaltır","E":7},
+            {"key":"Q9","text":"Nörolojik hastalık öyküsü → 0=hiç, 10=çok güçlü","effect":"azaltır","E":10},
+            {"key":"Q10","text":"Aralıklı oruç → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":8},
+            {"key":"Q11","text":"Düzenli ve aşırı alkol → Haftada kaç gün? (0–7 gün)","effect":"azaltır","E":9},
+            {"key":"Q12","text":"Yeni şeyler öğrenme → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":9},
+            {"key":"Q13","text":"Lif açısından zayıf beslenme → Günlük lif (gram)","effect":"azaltır","E":7},
+            {"key":"Q14","text":"Aşırı gürültülü/kaotik ortam → Günlük kaç saat? (saat)","effect":"azaltır","E":8},
+            {"key":"Q15","text":"Kapalı ortamda (ışık almadan) kalma → Günlük kaç saat? (saat)","effect":"azaltır","E":8},
+            {"key":"Q16","text":"Sürekli acele içinde yaşamak → Tempo 0–10","effect":"azaltır","E":7},
+            {"key":"Q17","text":"Doğayla düzenli temas → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":8},
+            {"key":"Q18","text":"Alüminyum/plastik kapta sıcak yemek → Yüzde kaç? (0–100%)","effect":"azaltır","E":7},
+            {"key":"Q19","text":"Dengeli ve düzenli uyku → Gecelik saat","effect":"artırır","E":9},
+            {"key":"Q20","text":"Yüksek fruktoz/şekerli gıda → Günlük gram","effect":"azaltır","E":8},
+            {"key":"Q21","text":"Omega-3 tüketimi (DHA/EPA) → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":9},
+            {"key":"Q22","text":"Zenginleştirilmiş çevre (sanat/müzik/doğa) → Haftada kaç gün?","effect":"artırır","E":9},
+            {"key":"Q23","text":"Yüksek insülin düzeyi → Açlık insülin (µIU/mL)","effect":"azaltır","E":7},
+            {"key":"Q24","text":"Yüksek D vitamini düzeyi → 25-OH D (ng/mL)","effect":"artırır","E":8},
+            {"key":"Q25","text":"Kronik inflamasyon (CRP/IL-6 yüksek) → 0=normal,10=çok yüksek","effect":"azaltır","E":8},
+            {"key":"Q26","text":"Kafeinli içeceklerin aşırı tüketimi → Günlük fincan","effect":"azaltır","E":6},
+            {"key":"Q27","text":"Yüksek entelektüel uyarım → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":9},
+        ]
+    },
+    "K5": {
+        "marker_name": "CoQ10",
+        "correlation": -1,
+        "max_points": 10,
+        "questions": [
+            {"key":"Q1","text":"CoQ10 açısından zengin gıda → Haftada kaç porsiyon? (porsiyon)","effect":"artırır","E":9},
+            {"key":"Q2","text":"CoQ10 takviyesi → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":10},
+            {"key":"Q3","text":"Dengeli ve düzenli beslenme → Yüzde kaç? (0–100%)","effect":"artırır","E":8},
+            {"key":"Q4","text":"Çok yoğun ve uzun egzersiz → Haftada kaç gün? (0–7 gün)","effect":"azaltır","E":7},
+            {"key":"Q5","text":"Enerjik hissetme düzeyi → 0–10","effect":"artırır","E":7},
+            {"key":"Q6","text":"Trans yağ / işlenmiş gıda → Haftada kaç gün? (0–7 gün)","effect":"azaltır","E":8},
+            {"key":"Q7","text":"Statin kullanımı → 0=hayır, 1=evet","effect":"azaltır","E":10},
+            {"key":"Q8","text":"Fermente gıda → Haftada kaç porsiyon?","effect":"artırır","E":7},
+            {"key":"Q9","text":"Kahvaltıyı atlamak → Haftada kaç gün? (0–7 gün)","effect":"azaltır","E":7},
+            {"key":"Q10","text":"Güneşten doğal D vitamini → Günlük dakika","effect":"artırır","E":8},
+            {"key":"Q11","text":"Mide problemi / emilim bozukluğu → Son 1 yılda kaç ay?","effect":"azaltır","E":8},
+            {"key":"Q12","text":"Vegan/vejetaryen beslenme → Haftada kaç gün? (0–7 gün)","effect":"azaltır","E":7},
+            {"key":"Q13","text":"Doğum kontrol/antidepresan/kortizon → 0=hayır,1=evet","effect":"azaltır","E":7},
+            {"key":"Q14","text":"Bitkisel yağ (zeytinyağı/avokado) → Haftada kaç porsiyon?","effect":"artırır","E":7},
+            {"key":"Q15","text":"Aşırı düşük kalorili diyet → Son 1 ayda kaç gün?","effect":"azaltır","E":8},
+            {"key":"Q16","text":"Omega-3 tüketimi → Haftada kaç gün? (0–7 gün)","effect":"artırır","E":8},
+            {"key":"Q17","text":"Sigara ya da alkol tüketimi → Haftada kaç gün? (0–7 gün)","effect":"azaltır","E":9},
+            {"key":"Q18","text":"Antioksidan içeren yiyecek → Haftada kaç porsiyon?","effect":"artırır","E":8},
+            {"key":"Q19","text":"Gıda katkı/tatlandırıcı kullanımı → Yüzde kaç? (0–100%)","effect":"azaltır","E":7},
+            {"key":"Q20","text":"Parfüm/deodorant/vücut spreyi → Günlük kaç kez?","effect":"azaltır","E":6},
+            {"key":"Q21","text":"Aynı anda birden fazla şey düşünmek → 0–10","effect":"azaltır","E":6},
+            {"key":"Q22","text":"Paraben/sülfat/ftalat içeren kozmetik → Yüzde kaç? (0–100%)","effect":"azaltır","E":7},
+            {"key":"Q23","text":"Yaş → yıl","effect":"azaltır","E":9},
+            {"key":"Q24","text":"Mitokondriyal fonksiyon bozukluğu → 0=hayır,1=evet","effect":"azaltır","E":8},
+            {"key":"Q25","text":"Kronik inflamasyon (CRP/IL-6) → 0=normal,10=çok yüksek","effect":"azaltır","E":7},
+            {"key":"Q26","text":"Aşırı stres ve kortizol yüksekliği → 0–10","effect":"azaltır","E":7},
+            {"key":"Q27","text":"Bazı antibiyotiklerin uzun süreli kullanımı → Son 12 ayda kaç gün?","effect":"azaltır","E":6},
+            {"key":"Q28","text":"Yetersiz uyku kalitesi → 0=çok kötü, 10=çok iyi (ters yoruma dikkat)","effect":"azaltır","E":7},
+            {"key":"Q29","text":"Yüksek kafein tüketimi → Günlük mg","effect":"azaltır","E":5},
+        ]
+    },
+}
+
+# --------------------------------------------------------------------
+# Ana hesaplama
+# --------------------------------------------------------------------
+def score(patient):
+    """
+    Girdi (dict):
+      {
+        "patient_id": "U001",
+        "signals": {
+          "K1": {"Q1": 7, "Q2": 3, ...},
+          "K2": {"Q1": -6, ...},
+          ...
+        }
+      }
+    Çıktı (dict):
+      {
+        "patient_id": "...",
+        "survey_score_0_100": ...,
+        "by_marker": {"K1":{"katki":..., "max":35.0}, ...},
+        "debug": [ {marker,qkey,raw10,directed10,E,scaled,...}, ... ]
+      }
+    NOT: raw’ın işareti kullanılmaz; yön Info1–Info4 kuralından gelir (ham büyüklük |raw| kullanılır).
+    """
+    pid = patient.get("patient_id")
+    signals = patient.get("signals", {}) or {}
+
+    total = 0.0
+    by_marker = {}
+    debug = []
+
+    # Her marker
+    for code, meta in QUESTIONS.items():
+        corr = meta["correlation"]
+        max_points = float(meta["max_points"])
+        qlist = meta["questions"]
+
+        e2_sum = 0.0
+        scaled_sum = 0.0
+
+        # Her soru
+        incoming = signals.get(code, {}) or {}
+        for q in qlist:
+            E = float(q["E"])
+            e2_sum += (E / 2.0)
+
+            raw_in = incoming.get(q["key"])
+            raw_val = _to_float_or_none(raw_in)
+            if raw_val is None:
+                raw10 = 0.0
+            else:
+                raw10 = _clamp(raw_val, -10.0, 10.0)
+
+            # Yön: Info1–Info4 (ham işareti **kullanmayız**, sadece büyüklük)
+            sign = _apply_info_rule(q["effect"], corr)
+            directed10 = abs(raw10) * sign
+
+            # E/2 ile ölçek
+            scaled = _scale_with_effect(directed10, E)
+            scaled_sum += scaled
+
+            debug.append({
+                "marker": code,
+                "qkey": q["key"],
+                "text": q["text"],
+                "effect": q["effect"],
+                "correlation": corr,
+                "E": E,
+                "raw_in": raw_in,
+                "raw10": raw10,
+                "directed10": directed10,
+                "scaled": scaled
+            })
+
+        # Marker katkısı: [-Σ(E/2), +Σ(E/2)] → 0..max_points
+        s_min = -e2_sum
+        s_max =  e2_sum
+        if s_max - s_min <= 0.0:
+            contrib = 0.0
+        else:
+            contrib = ((scaled_sum - s_min) / (s_max - s_min)) * max_points
+
+        # Rapor
+        by_marker[code] = {"katki": contrib, "max": max_points}
+        total += contrib
+
+    out = {
+        "patient_id": pid,
+        "survey_score_0_100": total,
+        "by_marker": by_marker,
+        "debug": debug
+    }
+    return out
+
+# ================================ SON =================================
